@@ -10,10 +10,7 @@ set(KINOVA_API_VERSION 2.6.0)
 
 add_compile_definitions(_OS_UNIX)
 
-# set(CMAKE_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/cmake/${PROJECT_NAME})
 set(CMAKE_INSTALL_DIR share/${PROJECT_NAME}/cmake)
-
-message(STATUS "CMAKE_INSTALL_DIR: ${CMAKE_INSTALL_DIR}")
 
 # check if kinova api exists
 if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/lib/release/libKortexApiCpp.a)
@@ -68,7 +65,7 @@ target_link_libraries(${PROJECT_NAME}
 # install
 install(
   TARGETS ${PROJECT_NAME}
-  EXPORT ${PROJECT_NAME}Targets
+  EXPORT ${PROJECT_NAME}-targets
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
@@ -81,8 +78,8 @@ install(DIRECTORY include/
 
 # Make the targets accessible from this packages's install tree
 install(
-  EXPORT ${PROJECT_NAME}Targets
-  FILE ${PROJECT_NAME}Targets.cmake
+  EXPORT ${PROJECT_NAME}-targets
+  FILE ${PROJECT_NAME}-targets.cmake
   NAMESPACE ${PROJECT_NAME}::
   DESTINATION ${CMAKE_INSTALL_DIR})
 
