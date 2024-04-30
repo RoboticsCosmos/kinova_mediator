@@ -3,6 +3,8 @@ project(kinova_mediator VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
+add_compile_definitions(_OS_UNIX)
+
 find_package(orocos_kdl REQUIRED)
 find_package(Eigen3 REQUIRED)
 
@@ -37,10 +39,24 @@ if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/lib/release/libKortexApiCpp
     message("Done.")
 endif()
 
+# install the kinova_api headers to the include directory under kinova_api
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/include/
+  DESTINATION include/kinova_api
+  FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+)
+
+# install the kinova_api library to the lib directory
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/lib/release/libKortexApiCpp.a
+  DESTINATION lib
+)
+
+list(APPEND local_INCLUDE_DIRS ${CMAKE_INSTALL_PREFIX}/include/)
+
 # includes
 include_directories(
   include
   ${EIGEN3_INCLUDE_DIR}
+  ${local_INCLUDE_DIRS}
   # kinova
   ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/include
   ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/include/client
@@ -58,7 +74,7 @@ add_library(${PROJECT_NAME} SHARED
 # link libraries
 target_link_libraries(${PROJECT_NAME}
   ${orocos_kdl_LIBRARIES}
-  ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/lib/release/libKortexApiCpp.a
+  ${CMAKE_INSTALL_PREFIX}/lib/libKortexApiCpp.a
   pthread
 )
 
@@ -71,9 +87,27 @@ install(
   RUNTIME DESTINATION bin
 )
 
-install(DIRECTORY include/
-  DESTINATION include
-  FILES_MATCHING PATTERN "*.hpp"
+# Generate the CMake config file
+include(CMakePackageConfigHelpers)
+# Generate the version file accompanying the project's config file
+configure_package_config_file(${PROJECT_NAME}-config.cmake.in
+                              ${PROJECT_NAME}-config.cmake
+                              INSTALL_DESTINATION ${CMAKE_INSTALL_DIR})
+
+write_basic_package_version_file(${PROJECT_NAME}-config-version.cmake
+                                 VERSION ${PROJECT_VERSION}
+                                 COMPATIBILITY AnyNewerVersion)
+
+# Install the config and configversion
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake
+        DESTINATION ${CMAKE_INSTALL_DIR})
+
+# Make the targets accessible from this packages's build tree
+export(
+  EXPORT ${PROJECT_NAME}-targets
+  NAMESPACE ${PROJECT_NAME}::
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-targets.cmake"
 )
 
 # Make the targets accessible from this packages's install tree
@@ -83,18 +117,8 @@ install(
   NAMESPACE ${PROJECT_NAME}::
   DESTINATION ${CMAKE_INSTALL_DIR})
 
-# Generate the CMake config file
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(${PROJECT_NAME}-config-version.cmake
-                                 VERSION ${PROJECT_VERSION}
-                                 COMPATIBILITY AnyNewerVersion)
-
-# Generate the version file accompanying the project's config file
-configure_package_config_file(${PROJECT_NAME}-config.cmake.in
-                              ${PROJECT_NAME}-config.cmake
-                              INSTALL_DESTINATION ${CMAKE_INSTALL_DIR})
-
-# Install the config and configversion
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake
-        DESTINATION ${CMAKE_INSTALL_DIR})
+# Install all public header files
+install(DIRECTORY include/
+  DESTINATION include
+  FILES_MATCHING PATTERN "*.hpp" PATTERN
+)
