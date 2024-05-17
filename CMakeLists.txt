@@ -10,8 +10,6 @@ find_package(Eigen3 REQUIRED)
 
 set(KINOVA_API_VERSION 2.6.0)
 
-add_compile_definitions(_OS_UNIX)
-
 set(CMAKE_INSTALL_DIR share/${PROJECT_NAME}/cmake)
 
 # check if kinova api exists

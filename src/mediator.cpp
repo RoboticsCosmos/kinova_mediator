@@ -95,8 +95,9 @@ void kinova_mediator::get_robot_state(KDL::JntArray &joint_positions,
     }
     catch (Kinova::Api::KDetailedException &ex)
     {
-      std::cout << "Kortex exception: " << ex.what() << std::endl;
-      std::cout << "Error sub-code: "
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
                 << Kinova::Api::SubErrorCodes_Name(
                        Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
                 << std::endl;
@@ -118,8 +119,9 @@ void kinova_mediator::get_joint_state(KDL::JntArray &joint_positions,
     }
     catch (Kinova::Api::KDetailedException &ex)
     {
-      std::cout << "Kortex exception: " << ex.what() << std::endl;
-      std::cout << "Error sub-code: "
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
                 << Kinova::Api::SubErrorCodes_Name(
                        Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
                 << std::endl;
@@ -288,21 +290,26 @@ int kinova_mediator::set_joint_torques(const KDL::JntArray &joint_torques)
     }
     catch (Kinova::Api::KDetailedException &ex)
     {
-      std::cout << "Kortex exception: " << ex.what() << std::endl;
-      std::cout << "Error sub-code: "
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
                 << Kinova::Api::SubErrorCodes_Name(
                        Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
                 << std::endl;
+      Kinova::Api::Base::ServoingModeInformation servoing_mode_info = base_->GetServoingMode();
+      std::cout << "[ " << robot_name << " ]" << "Servoing mode: " << servoing_mode_info.servoing_mode() << std::endl;
       return -1;
     }
     catch (std::runtime_error &ex2)
     {
-      std::cout << "runtime error: " << ex2.what() << std::endl;
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "runtime error: " << ex2.what() << std::endl;
       return -1;
     }
     catch (...)
     {
-      std::cout << "Unknown error." << std::endl;
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Unknown error." << std::endl;
       return -1;
     }
   }
@@ -313,6 +320,7 @@ int kinova_mediator::set_joint_torques(const KDL::JntArray &joint_torques)
 int kinova_mediator::set_control_mode(const int desired_control_mode)
 {
   control_mode_ = desired_control_mode;
+  KDL::JntArray joint_torques(kinova_constants::NUMBER_OF_JOINTS);
   if (kinova_environment_ != kinova_environment::SIMULATION)
   {
     try
@@ -321,11 +329,58 @@ int kinova_mediator::set_control_mode(const int desired_control_mode)
       switch (control_mode_)
       {
         case control_mode::TORQUE:
+          base_feedback_ = base_cyclic_->RefreshFeedback();
+
+          for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+            std::cout << "Joint " << i << " Torque: " << base_feedback_.actuators(i).torque() << std::endl;
+
           // Set actuators in torque mode
           control_mode_message_.set_control_mode(Kinova::Api::ActuatorConfig::ControlMode::TORQUE);
 
           for (int actuator_id = 1; actuator_id < ACTUATOR_COUNT + 1; actuator_id++)
+          {
+            for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+              base_command_.mutable_actuators(i)->set_position(base_feedback_.actuators(i).position());
+        
+            joint_torques(actuator_id - 1) = base_feedback_.actuators(actuator_id - 1).torque();
+
+            for (int j = 0; j < actuator_id; j++)
+              base_command_.mutable_actuators(j)->set_torque_joint(joint_torques(j));
+
             actuator_config_->SetControlMode(control_mode_message_, actuator_id);
+
+            increment_command_id();
+
+            // Send the commands
+            try
+            {
+              auto something = base_cyclic_->Refresh(base_command_, 0);
+            }
+            catch (Kinova::Api::KDetailedException &ex)
+            {
+              std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+              std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+              std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
+                        << Kinova::Api::SubErrorCodes_Name(
+                              Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
+                        << std::endl;
+              Kinova::Api::Base::ServoingModeInformation servoing_mode_info = base_->GetServoingMode();
+              std::cout << "[ " << robot_name << " ]" << "Servoing mode: " << servoing_mode_info.servoing_mode() << std::endl;
+              return -1;
+            }
+            catch (std::runtime_error &ex2)
+            {
+              std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+              std::cout << "[ " << robot_name << " ]" << "runtime error: " << ex2.what() << std::endl;
+              return -1;
+            }
+            catch (...)
+            {
+              std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+              std::cout << "[ " << robot_name << " ]" << "Unknown error." << std::endl;
+              return -1;
+            }
+           }
           return 0;
           // actuator_config_->SetControlMode(control_mode_message_, 1);
           // actuator_config_->SetControlMode(control_mode_message_, 7);
@@ -357,8 +412,9 @@ int kinova_mediator::set_control_mode(const int desired_control_mode)
     }
     catch (Kinova::Api::KDetailedException &ex)
     {
-      std::cout << "Kortex exception: " << ex.what() << std::endl;
-      std::cout << "Error sub-code: "
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
                 << Kinova::Api::SubErrorCodes_Name(
                        Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
                 << std::endl;
@@ -584,7 +640,9 @@ void kinova_mediator::initialize(const int robot_environment, const int id, cons
     // Create API error-callback and objects
     // Connect all ports for real control
 
-    print("Connecting to the robot...");
+    std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+
+    print("Connecting to the robot: " + robot_name);
     auto error_callback = [](Kinova::Api::KError err)
     { cout << "_________ callback error _________" << err.toString(); };
     this->transport_ = std::make_shared<Kinova::Api::TransportClientTcp>();
@@ -605,7 +663,7 @@ void kinova_mediator::initialize(const int robot_environment, const int id, cons
     // Set session data connection information
     auto create_session_info = Kinova::Api::Session::CreateSessionInfo();
     create_session_info.set_username("admin");
-    create_session_info.set_password("kinova2_area4251");
+    create_session_info.set_password("admin");
     create_session_info.set_session_inactivity_timeout(200);     // (milliseconds)
     create_session_info.set_connection_inactivity_timeout(200);  // (milliseconds)
 
@@ -645,7 +703,7 @@ void kinova_mediator::initialize(const int robot_environment, const int id, cons
       base_->SetServoingMode(servoing_mode_);
 
       // Wait
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      // std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
       // Get the initial state
       base_feedback_ = base_cyclic_->RefreshFeedback();
@@ -653,11 +711,26 @@ void kinova_mediator::initialize(const int robot_environment, const int id, cons
       // Initialize each actuator to their current position
       for (int i = 0; i < ACTUATOR_COUNT; i++)
         base_command_.add_actuators()->set_position(base_feedback_.actuators(i).position());
-
+      
       // Send a first command (time frame) -> position command in this case
       base_feedback_ = base_cyclic_->Refresh(base_command_, 0);
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      // check if the servoing mode is set to low level
+      Kinova::Api::Base::ServoingModeInformation servoing_mode_info = base_->GetServoingMode();
+
+      if (servoing_mode_info.servoing_mode() != Kinova::Api::Base::ServoingMode::LOW_LEVEL_SERVOING)
+      {
+        std::cout << "Servoing mode is not set to low level" << std::endl;
+        std::cout << "Servoing mode: " << servoing_mode_info.servoing_mode() << std::endl;
+        return;
+      }
+      else
+      {
+        std::cout << "Servoing mode is set to low level" << std::endl;
+        std::cout << "Servoing mode: " << servoing_mode_info.servoing_mode() << std::endl;
+      }
+
+      // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
     catch (Kinova::Api::KDetailedException &ex)
     {
@@ -723,5 +796,5 @@ void kinova_mediator::deinitialize()
   }
 
   is_initialized_ = false;
-  printf("Robot deinitialized! \n\n\n");
+  printf("Robot deinitialized! \n");
 }
