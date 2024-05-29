@@ -317,10 +317,17 @@ int kinova_mediator::set_joint_torques(const KDL::JntArray &joint_torques)
   return 0;
 }
 
-int kinova_mediator::set_control_mode(const int desired_control_mode)
+int kinova_mediator::set_control_mode(const int desired_control_mode, double *joint_torques_sp)
 {
   control_mode_ = desired_control_mode;
   KDL::JntArray joint_torques(kinova_constants::NUMBER_OF_JOINTS);
+
+  if (joint_torques_sp != nullptr)
+    for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+      joint_torques(i) = joint_torques_sp[i];
+  else
+    joint_torques.data.setZero();
+
   if (kinova_environment_ != kinova_environment::SIMULATION)
   {
     try
@@ -341,8 +348,9 @@ int kinova_mediator::set_control_mode(const int desired_control_mode)
           {
             for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
               base_command_.mutable_actuators(i)->set_position(base_feedback_.actuators(i).position());
-        
-            joint_torques(actuator_id - 1) = base_feedback_.actuators(actuator_id - 1).torque();
+
+            if (joint_torques_sp == nullptr)
+              joint_torques(actuator_id - 1) = base_feedback_.actuators(actuator_id - 1).torque();
 
             for (int j = 0; j < actuator_id; j++)
               base_command_.mutable_actuators(j)->set_torque_joint(joint_torques(j));
@@ -447,17 +455,17 @@ int kinova_mediator::set_joint_command(const KDL::JntArray &joint_positions,
   {
     case control_mode::TORQUE:
       if (control_mode_ != control_mode::TORQUE)
-        set_control_mode(desired_control_mode);
+        set_control_mode(desired_control_mode, nullptr);
       return set_joint_torques(joint_torques);
 
     case control_mode::VELOCITY:
       if (control_mode_ != control_mode::VELOCITY)
-        set_control_mode(desired_control_mode);
+        set_control_mode(desired_control_mode, nullptr);
       return set_joint_velocities(joint_velocities);
 
     case control_mode::POSITION:
       if (control_mode_ != control_mode::POSITION)
-        set_control_mode(desired_control_mode);
+        set_control_mode(desired_control_mode, nullptr);
       return set_joint_positions(joint_positions);
 
     default:
@@ -496,7 +504,7 @@ int kinova_mediator::stop_robot_motion()
       base_command_.mutable_actuators(i)->set_position(base_feedback_.actuators(i).position());
 
     if (control_mode_ != control_mode::POSITION)
-      set_control_mode(control_mode::POSITION);
+      set_control_mode(control_mode::POSITION, nullptr);
 
     increment_command_id();
 

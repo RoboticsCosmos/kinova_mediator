@@ -141,7 +141,7 @@ public:
   // Set Zero Joint Velocities and wait until robot has stopped completely
   virtual int stop_robot_motion();
   // Set desired control mode for robot actuators (position/velocity/torque)
-  int set_control_mode(const int desired_control_mode);
+  int set_control_mode(const int desired_control_mode, double *joint_torques_sp);
 
   virtual std::vector<double> get_maximum_joint_pos_limits();
   virtual std::vector<double> get_minimum_joint_pos_limits();
