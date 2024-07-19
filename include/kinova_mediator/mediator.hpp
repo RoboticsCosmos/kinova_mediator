@@ -117,6 +117,9 @@ public:
   // De-initializes variables and closes the sessions
   void deinitialize();
 
+  // Refreshes feedback from the robot
+  void refresh_feedback();
+
   // Update joint space state: measured positions, velocities and torques
   virtual void get_joint_state(KDL::JntArray &joint_positions, KDL::JntArray &joint_velocities,
                                KDL::JntArray &joint_torques);
@@ -201,6 +204,12 @@ public:
   virtual void get_joint_torques(KDL::JntArray &joint_torques);
   // Get measured / estimated external forces acting on the end-effector
   virtual void get_end_effector_wrench(KDL::Wrench &end_effector_wrench);
+
+  // get arm voltage
+  virtual void get_arm_voltage(double &voltage);
+  // get arm current
+  virtual void get_arm_current(double &current);
+  
 
   // Increses index of the command's frame id (buffer)
   void increment_command_id();

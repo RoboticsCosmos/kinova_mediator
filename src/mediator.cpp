@@ -79,6 +79,26 @@ kinova_mediator::~kinova_mediator()
     deinitialize();
 }
 
+void kinova_mediator::refresh_feedback()
+{
+  if (kinova_environment_ != kinova_environment::SIMULATION)
+  {
+    try
+    {
+      base_feedback_ = base_cyclic_->RefreshFeedback();
+    }
+    catch (Kinova::Api::KDetailedException &ex)
+    {
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
+                << Kinova::Api::SubErrorCodes_Name(
+                       Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
+                << std::endl;
+    }
+  }
+}
+
 // Update robot state: measured positions, velocities, torques and measured / estimated external
 // forces on end-effector
 void kinova_mediator::get_robot_state(KDL::JntArray &joint_positions,
@@ -87,22 +107,22 @@ void kinova_mediator::get_robot_state(KDL::JntArray &joint_positions,
                                       KDL::Wrench &end_effector_wrench)
 {
   get_joint_state(joint_positions, joint_velocities, joint_torques);
-  if (kinova_environment_ != kinova_environment::SIMULATION)
-  {
-    try
-    {
-      base_feedback_ = base_cyclic_->RefreshFeedback();
-    }
-    catch (Kinova::Api::KDetailedException &ex)
-    {
-      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
-      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
-      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
-                << Kinova::Api::SubErrorCodes_Name(
-                       Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
-                << std::endl;
-    }
-  }
+  // if (kinova_environment_ != kinova_environment::SIMULATION)
+  // {
+  //   try
+  //   {
+  //     base_feedback_ = base_cyclic_->RefreshFeedback();
+  //   }
+  //   catch (Kinova::Api::KDetailedException &ex)
+  //   {
+  //     std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+  //     std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+  //     std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
+  //               << Kinova::Api::SubErrorCodes_Name(
+  //                      Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
+  //               << std::endl;
+  //   }
+  // }
   get_end_effector_wrench(end_effector_wrench);
 }
 
@@ -111,25 +131,35 @@ void kinova_mediator::get_joint_state(KDL::JntArray &joint_positions,
                                       KDL::JntArray &joint_velocities,
                                       KDL::JntArray &joint_torques)
 {
-  if (kinova_environment_ != kinova_environment::SIMULATION)
-  {
-    try
-    {
-      base_feedback_ = base_cyclic_->RefreshFeedback();
-    }
-    catch (Kinova::Api::KDetailedException &ex)
-    {
-      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
-      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
-      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
-                << Kinova::Api::SubErrorCodes_Name(
-                       Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
-                << std::endl;
-    }
-  }
+  // if (kinova_environment_ != kinova_environment::SIMULATION)
+  // {
+  //   try
+  //   {
+  //     base_feedback_ = base_cyclic_->RefreshFeedback();
+  //   }
+  //   catch (Kinova::Api::KDetailedException &ex)
+  //   {
+  //     std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+  //     std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+  //     std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
+  //               << Kinova::Api::SubErrorCodes_Name(
+  //                      Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
+  //               << std::endl;
+  //   }
+  // }
   get_joint_positions(joint_positions);
   get_joint_velocities(joint_velocities);
   get_joint_torques(joint_torques);
+}
+
+void  kinova_mediator::get_arm_voltage(double &voltage)
+{
+  voltage = base_feedback_.base().arm_voltage();
+}
+
+void kinova_mediator::get_arm_current(double &current)
+{
+  current = base_feedback_.base().arm_current();
 }
 
 float kinova_mediator::DEG_TO_RAD(float deg)
