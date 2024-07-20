@@ -206,9 +206,9 @@ public:
   virtual void get_end_effector_wrench(KDL::Wrench &end_effector_wrench);
 
   // get arm voltage
-  virtual void get_arm_voltage(double &voltage);
+  virtual void get_arm_voltage(double &base_voltage, double *actuator_voltages);
   // get arm current
-  virtual void get_arm_current(double &current);
+  virtual void get_arm_current(double &base_current, double *actuator_currents);
   
 
   // Increses index of the command's frame id (buffer)

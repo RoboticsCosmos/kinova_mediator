@@ -152,14 +152,18 @@ void kinova_mediator::get_joint_state(KDL::JntArray &joint_positions,
   get_joint_torques(joint_torques);
 }
 
-void  kinova_mediator::get_arm_voltage(double &voltage)
+void  kinova_mediator::get_arm_voltage(double &base_voltage, double *actuator_voltages)
 {
-  voltage = base_feedback_.base().arm_voltage();
+  base_voltage = base_feedback_.base().arm_voltage();
+  for (int i = 0; i < ACTUATOR_COUNT; i++)
+    actuator_voltages[i] = base_feedback_.actuators(i).voltage();
 }
 
-void kinova_mediator::get_arm_current(double &current)
+void kinova_mediator::get_arm_current(double &base_current, double *actuator_currents)
 {
-  current = base_feedback_.base().arm_current();
+  base_current = base_feedback_.base().arm_current();
+  for (int i = 0; i < ACTUATOR_COUNT; i++)
+    actuator_currents[i] = base_feedback_.actuators(i).current_motor();
 }
 
 float kinova_mediator::DEG_TO_RAD(float deg)
