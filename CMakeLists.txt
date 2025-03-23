@@ -72,7 +72,7 @@ add_library(${PROJECT_NAME} SHARED
 # link libraries
 target_link_libraries(${PROJECT_NAME}
   ${orocos_kdl_LIBRARIES}
-  ${CMAKE_INSTALL_PREFIX}/lib/libKortexApiCpp.a
+  ${CMAKE_CURRENT_SOURCE_DIR}/kinova_api/lib/release/libKortexApiCpp.a
   pthread
 )
 

@@ -57,7 +57,21 @@ SOFTWARE.
 #include "kdl/jntarray.hpp"
 
 // define constants
-#define PI 3.14159265358979323846
+namespace kinova_mediator_constants {
+  constexpr double PI = 3.14159265358979323846;
+
+  constexpr const char* IP_ADDRESS_1 = "192.168.1.10";
+  constexpr const char* IP_ADDRESS_2 = "192.168.1.12";
+
+  constexpr int PORT = 10000;
+  constexpr int PORT_REAL_TIME = 10001;
+
+  constexpr int ACTUATOR_COUNT = 7;
+  constexpr int SEGMENT_COUNT_FULL = 8;
+  constexpr int NUM_OF_CONSTRAINTS = 6;
+
+  constexpr double KINOVAID = 0.0231;
+} // namespace kinova_mediator_constants
 
 enum kinova_model
 {
@@ -110,15 +124,16 @@ public:
   ~kinova_mediator();
 
   // Initializes variables and calibrates the manipulator
-  virtual void initialize(const int robot_environment, const int id, const double DT_SEC);
+  virtual void initialize(const int robot_environment, const robot_id robot_id_, 
+    const std::string& username, const std::string& password, 
+    const int session_inactivity_timeout = 200, const int connection_inactivity_timeout = 200, 
+    const int PORT_ = kinova_mediator_constants::PORT, 
+    const int PORT_REAL_TIME_ = kinova_mediator_constants::PORT_REAL_TIME, const double DT_SEC = 0.0);
 
   virtual bool is_initialized();
 
   // De-initializes variables and closes the sessions
   void deinitialize();
-
-  // Refreshes feedback from the robot
-  void refresh_feedback();
 
   // Update joint space state: measured positions, velocities and torques
   virtual void get_joint_state(KDL::JntArray &joint_positions, KDL::JntArray &joint_velocities,
@@ -137,14 +152,24 @@ public:
 
   // Set joint position command
   virtual int set_joint_positions(const KDL::JntArray &joint_positions);
+  virtual int set_joint_positions(const std::vector<double> &arm_commands_positions);
   // Set joint velocity command
   virtual int set_joint_velocities(const KDL::JntArray &joint_velocities);
+  virtual int set_joint_velocities(const std::vector<double> &joint_velocities);
   // Set joint torque command
   virtual int set_joint_torques(const KDL::JntArray &joint_torques);
+  virtual int set_joint_torques(const std::vector<double> &joint_torques);
   // Set Zero Joint Velocities and wait until robot has stopped completely
   virtual int stop_robot_motion();
   // Set desired control mode for robot actuators (position/velocity/torque)
   int set_control_mode(const int desired_control_mode, double *joint_torques_sp);
+
+  std::shared_ptr<Kinova::Api::Base::BaseClient> get_base() const;
+  std::shared_ptr<Kinova::Api::BaseCyclic::BaseCyclicClient> get_base_cyclic() const;
+  Kinova::Api::BaseCyclic::Command& get_base_command();
+  Kinova::Api::BaseCyclic::Feedback& get_base_feedback();
+  Kinova::Api::Base::ServoingModeInformation& get_servoing_mode();
+  Kinova::Api::Base::ServoingMode& get_arm_servoing_mode();
 
   virtual std::vector<double> get_maximum_joint_pos_limits();
   virtual std::vector<double> get_minimum_joint_pos_limits();
@@ -171,6 +196,9 @@ public:
   bool add_offsets_;
   bool connection_established_;
   double DT_SEC_;
+  // string for username and password
+  std::string username_;
+  std::string password_;
 
   KDL::JntArray joint_inertia_sim_;
 
@@ -195,21 +223,19 @@ public:
   // Variable for alternating servoing mode (High or Low level control)
   Kinova::Api::Base::ServoingModeInformation servoing_mode_;
   Kinova::Api::ActuatorConfig::ControlModeInformation control_mode_message_;
+  Kinova::Api::Base::ServoingMode arm_servoing_mode_;
 
   // Get current joint positions
   virtual void get_joint_positions(KDL::JntArray &joint_positions);
+  virtual void get_joint_positions(std::vector<double> &joint_positions);
   // Get current joint velocities
   virtual void get_joint_velocities(KDL::JntArray &joint_velocities);
+  virtual void get_joint_velocities(std::vector<double> &joint_velocities);
   // Get current joint torques
   virtual void get_joint_torques(KDL::JntArray &joint_torques);
+  virtual void get_joint_torques(std::vector<double> &joint_torques);
   // Get measured / estimated external forces acting on the end-effector
   virtual void get_end_effector_wrench(KDL::Wrench &end_effector_wrench);
-
-  // get arm voltage
-  virtual void get_arm_voltage(double &base_voltage, double *actuator_voltages);
-  // get arm current
-  virtual void get_arm_current(double &base_current, double *actuator_currents);
-  
 
   // Increses index of the command's frame id (buffer)
   void increment_command_id();

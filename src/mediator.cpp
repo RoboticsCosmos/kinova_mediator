@@ -26,15 +26,6 @@ SOFTWARE.
 // #include "includes.h"
 #include "kinova_mediator/mediator.hpp"
 
-#define IP_ADDRESS_1 "192.168.1.10"
-#define IP_ADDRESS_2 "192.168.1.12"
-#define PORT 10000
-#define PORT_REAL_TIME 10001
-#define ACTUATOR_COUNT 7
-#define SEGMENT_COUNT_FULL 8
-#define NUM_OF_CONSTRAINTS 6
-#define KINOVAID 0.0231
-
 template <typename T>
 void print(const T &value)
 {
@@ -50,13 +41,15 @@ void print(const char *const &value)
 
 kinova_mediator::kinova_mediator()
     : is_initialized_(false),
-      kinova_id(KINOVAID),
+      kinova_id(kinova_mediator_constants::KINOVAID),
       kinova_environment_(kinova_environment::REAL),
+      username_("admin"),
+      password_("admin"),
       control_mode_(control_mode::STOP_MOTION),
       add_offsets_(false),
       connection_established_(false),
       DT_SEC_(0.0),
-      joint_inertia_sim_(ACTUATOR_COUNT),
+      joint_inertia_sim_(kinova_mediator_constants::ACTUATOR_COUNT),
       // robot_state_(ACTUATOR_COUNT, SEGMENT_COUNT_FULL, SEGMENT_COUNT_FULL + 1,
       // NUM_OF_CONSTRAINTS),
       transport_(nullptr),
@@ -77,26 +70,6 @@ kinova_mediator::~kinova_mediator()
   // Close API sessions and connections
   if (is_initialized_)
     deinitialize();
-}
-
-void kinova_mediator::refresh_feedback()
-{
-  if (kinova_environment_ != kinova_environment::SIMULATION)
-  {
-    try
-    {
-      base_feedback_ = base_cyclic_->RefreshFeedback();
-    }
-    catch (Kinova::Api::KDetailedException &ex)
-    {
-      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
-      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
-      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
-                << Kinova::Api::SubErrorCodes_Name(
-                       Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
-                << std::endl;
-    }
-  }
 }
 
 // Update robot state: measured positions, velocities, torques and measured / estimated external
@@ -152,20 +125,6 @@ void kinova_mediator::get_joint_state(KDL::JntArray &joint_positions,
   get_joint_torques(joint_torques);
 }
 
-void  kinova_mediator::get_arm_voltage(double &base_voltage, double *actuator_voltages)
-{
-  base_voltage = base_feedback_.base().arm_voltage();
-  for (int i = 0; i < ACTUATOR_COUNT; i++)
-    actuator_voltages[i] = base_feedback_.actuators(i).voltage();
-}
-
-void kinova_mediator::get_arm_current(double &base_current, double *actuator_currents)
-{
-  base_current = base_feedback_.base().arm_current();
-  for (int i = 0; i < ACTUATOR_COUNT; i++)
-    actuator_currents[i] = base_feedback_.actuators(i).current_motor();
-}
-
 float kinova_mediator::DEG_TO_RAD(float deg)
 {
   return deg * M_PI / 180.0;
@@ -194,6 +153,49 @@ void kinova_mediator::get_joint_positions(KDL::JntArray &joint_positions)
     joint_positions(3) -= DEG_TO_RAD(360.0);
   if (joint_positions(5) > DEG_TO_RAD(180.0))
     joint_positions(5) -= DEG_TO_RAD(360.0);
+}
+
+void kinova_mediator::get_joint_positions(std::vector<double> &joint_positions)
+{
+  // Joint position given in deg
+  for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+  {
+    joint_positions[i] = DEG_TO_RAD(base_feedback_.actuators(i).position());
+  }
+  // Kinova API provides only positive angle values
+  // This operation is required to align the logic with our safety monitor
+  // We need to convert some angles to negative values
+
+  if (joint_positions[1] > DEG_TO_RAD(180.0))
+    joint_positions[1] -= DEG_TO_RAD(360.0);
+  if (joint_positions[3] > DEG_TO_RAD(180.0))
+    joint_positions[3] -= DEG_TO_RAD(360.0);
+  if (joint_positions[5] > DEG_TO_RAD(180.0))
+    joint_positions[5] -= DEG_TO_RAD(360.0);
+}
+
+std::shared_ptr<Kinova::Api::Base::BaseClient> kinova_mediator::get_base() const {
+  return base_;
+}
+
+std::shared_ptr<Kinova::Api::BaseCyclic::BaseCyclicClient> kinova_mediator::get_base_cyclic() const {
+  return base_cyclic_;
+}
+
+Kinova::Api::BaseCyclic::Command& kinova_mediator::get_base_command() {
+  return base_command_;
+}
+
+Kinova::Api::BaseCyclic::Feedback& kinova_mediator::get_base_feedback() {
+  return base_feedback_;
+}
+
+Kinova::Api::Base::ServoingModeInformation& kinova_mediator::get_servoing_mode() {
+  return servoing_mode_;
+}
+
+Kinova::Api::Base::ServoingMode& kinova_mediator::get_arm_servoing_mode() {
+  return arm_servoing_mode_;
 }
 
 // Set Joint Positions
@@ -237,12 +239,61 @@ int kinova_mediator::set_joint_positions(const KDL::JntArray &joint_positions)
   return 0;
 }
 
+int kinova_mediator::set_joint_positions(const std::vector<double> &joint_positions)
+{
+  // Ensure the input vector has the correct size
+  if (joint_positions.size() != kinova_constants::NUMBER_OF_JOINTS) {
+    std::cout << "Error: Input vector size (" << joint_positions.size() 
+              << ") doesn't match expected number of joints (" 
+              << kinova_constants::NUMBER_OF_JOINTS << ")" << std::endl;
+    return -1;
+  }
+
+  // Set the position for each actuator
+  for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++) {
+    base_command_.mutable_actuators(i)->set_position(RAD_TO_DEG(joint_positions[i]));
+  }
+
+  if (kinova_environment_ != kinova_environment::SIMULATION) {
+    increment_command_id();
+
+    // Send the commands
+    try {
+      base_feedback_ = base_cyclic_->Refresh(base_command_, 0);
+    }
+    catch (Kinova::Api::KDetailedException &ex) {
+      std::cout << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "Error sub-code: "
+                << Kinova::Api::SubErrorCodes_Name(
+                      Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
+                << std::endl;
+      return -1;
+    }
+    catch (std::runtime_error &ex2) {
+      std::cout << "runtime error: " << ex2.what() << std::endl;
+      return -1;
+    }
+    catch (...) {
+      std::cout << "Unknown error." << std::endl;
+      return -1;
+    }
+  }
+
+  return 0;
+}
 // Get Joint Velocities
 void kinova_mediator::get_joint_velocities(KDL::JntArray &joint_velocities)
 {
   // Joint velocity given in deg/sec
   for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
     joint_velocities(i) = DEG_TO_RAD(base_feedback_.actuators(i).velocity());
+}
+
+void kinova_mediator::get_joint_velocities(std::vector<double> &joint_velocities)
+{
+  // Joint velocity given in deg/sec
+  for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+    joint_velocities[i] = DEG_TO_RAD(base_feedback_.actuators(i).velocity());
 }
 
 // Set Joint Velocities
@@ -286,12 +337,68 @@ int kinova_mediator::set_joint_velocities(const KDL::JntArray &joint_velocities)
   return 0;
 }
 
+int kinova_mediator::set_joint_velocities(const std::vector<double> &joint_velocities)
+{
+
+  // Ensure the input vector has the correct size
+  if (joint_velocities.size() != kinova_constants::NUMBER_OF_JOINTS) {
+    std::cout << "Error: Input vector size (" << joint_velocities.size() 
+              << ") doesn't match expected number of joints (" 
+              << kinova_constants::NUMBER_OF_JOINTS << ")" << std::endl;
+    return -1;
+  }
+
+  for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+  {
+    base_command_.mutable_actuators(i)->set_position(base_feedback_.actuators(i).position());
+    base_command_.mutable_actuators(i)->set_velocity(RAD_TO_DEG(joint_velocities[i]));
+  }
+
+  if (kinova_environment_ != kinova_environment::SIMULATION)
+  {
+    increment_command_id();
+
+    // Send the commands
+    try
+    {
+      base_feedback_ = base_cyclic_->Refresh(base_command_, 0);
+    }
+    catch (Kinova::Api::KDetailedException &ex)
+    {
+      std::cout << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "Error sub-code: "
+                << Kinova::Api::SubErrorCodes_Name(
+                       Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
+                << std::endl;
+      return -1;
+    }
+    catch (std::runtime_error &ex2)
+    {
+      std::cout << "runtime error: " << ex2.what() << std::endl;
+      return -1;
+    }
+    catch (...)
+    {
+      std::cout << "Unknown error." << std::endl;
+      return -1;
+    }
+  }
+  return 0;
+}
+
 // Get Joint Torques
 void kinova_mediator::get_joint_torques(KDL::JntArray &joint_torques)
 {
   // Joint torque given in Newton * meters
   for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
     joint_torques(i) = base_feedback_.actuators(i).torque();
+}
+
+void kinova_mediator::get_joint_torques(std::vector<double> &joint_torques)
+{
+  // Joint torque given in Newton * meters
+  for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+    joint_torques[i] = base_feedback_.actuators(i).torque();
 }
 
 void kinova_mediator::get_end_effector_wrench(KDL::Wrench &end_effector_wrench)
@@ -351,6 +458,52 @@ int kinova_mediator::set_joint_torques(const KDL::JntArray &joint_torques)
   return 0;
 }
 
+int kinova_mediator::set_joint_torques(const std::vector<double> &joint_torques)
+{
+  for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
+  {
+    base_command_.mutable_actuators(i)->set_position(base_feedback_.actuators(i).position());
+    base_command_.mutable_actuators(i)->set_torque_joint(joint_torques[i]);
+  }
+
+  if (kinova_environment_ != kinova_environment::SIMULATION)
+  {
+    increment_command_id();
+
+    // Send the commands
+    try
+    {
+      base_feedback_ = base_cyclic_->Refresh(base_command_, 0);
+    }
+    catch (Kinova::Api::KDetailedException &ex)
+    {
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Kortex exception: " << ex.what() << std::endl;
+      std::cout << "[ " << robot_name << " ]" << "Error sub-code: "
+                << Kinova::Api::SubErrorCodes_Name(
+                       Kinova::Api::SubErrorCodes((ex.getErrorInfo().getError().error_sub_code())))
+                << std::endl;
+      Kinova::Api::Base::ServoingModeInformation servoing_mode_info = base_->GetServoingMode();
+      std::cout << "[ " << robot_name << " ]" << "Servoing mode: " << servoing_mode_info.servoing_mode() << std::endl;
+      return -1;
+    }
+    catch (std::runtime_error &ex2)
+    {
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "runtime error: " << ex2.what() << std::endl;
+      return -1;
+    }
+    catch (...)
+    {
+      std::string robot_name = kinova_id == KINOVA_GEN3_1 ? "KINOVA_LEFT" : "KINOVA_RIGHT";
+      std::cout << "[ " << robot_name << " ]" << "Unknown error." << std::endl;
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
 int kinova_mediator::set_control_mode(const int desired_control_mode, double *joint_torques_sp)
 {
   control_mode_ = desired_control_mode;
@@ -366,6 +519,14 @@ int kinova_mediator::set_control_mode(const int desired_control_mode, double *jo
   {
     try
     {
+      Kinova::Api::Base::ServoingModeInformation servoing_mode_info = base_->GetServoingMode();
+      if (servoing_mode_info.servoing_mode() != Kinova::Api::Base::ServoingMode::LOW_LEVEL_SERVOING)
+      {
+        std::cout << "Servoing mode: " << servoing_mode_info.servoing_mode() << std::endl;
+        std::cout << "Servoing mode is not set to low level. Setting it back to low level servoing mode" << std::endl;
+        servoing_mode_.set_servoing_mode(Kinova::Api::Base::ServoingMode::LOW_LEVEL_SERVOING);
+        base_->SetServoingMode(servoing_mode_);
+      }      
       auto control_mode_message_ = Kinova::Api::ActuatorConfig::ControlModeInformation();
       switch (control_mode_)
       {
@@ -378,7 +539,7 @@ int kinova_mediator::set_control_mode(const int desired_control_mode, double *jo
           // Set actuators in torque mode
           control_mode_message_.set_control_mode(Kinova::Api::ActuatorConfig::ControlMode::TORQUE);
 
-          for (int actuator_id = 1; actuator_id < ACTUATOR_COUNT + 1; actuator_id++)
+          for (int actuator_id = 1; actuator_id < kinova_mediator_constants::ACTUATOR_COUNT + 1; actuator_id++)
           {
             for (int i = 0; i < kinova_constants::NUMBER_OF_JOINTS; i++)
               base_command_.mutable_actuators(i)->set_position(base_feedback_.actuators(i).position());
@@ -435,7 +596,7 @@ int kinova_mediator::set_control_mode(const int desired_control_mode, double *jo
           // Set actuators in velocity mode
           control_mode_message_.set_control_mode(
               Kinova::Api::ActuatorConfig::ControlMode::VELOCITY);
-          for (int actuator_id = 1; actuator_id < ACTUATOR_COUNT + 1; actuator_id++)
+          for (int actuator_id = 1; actuator_id < kinova_mediator_constants::ACTUATOR_COUNT + 1; actuator_id++)
             actuator_config_->SetControlMode(control_mode_message_, actuator_id);
           return 0;
 
@@ -443,7 +604,7 @@ int kinova_mediator::set_control_mode(const int desired_control_mode, double *jo
           // Set actuators in position mode
           control_mode_message_.set_control_mode(
               Kinova::Api::ActuatorConfig::ControlMode::POSITION);
-          for (int actuator_id = 1; actuator_id < ACTUATOR_COUNT + 1; actuator_id++)
+          for (int actuator_id = 1; actuator_id < kinova_mediator_constants::ACTUATOR_COUNT + 1; actuator_id++)
             actuator_config_->SetControlMode(control_mode_message_, actuator_id);
           return 0;
 
@@ -606,7 +767,7 @@ std::vector<double> kinova_mediator::get_joint_velocity_limits()
 
 std::vector<double> kinova_mediator::get_joint_acceleration_limits()
 {
-  assert(ACTUATOR_COUNT == kinova_constants::joint_acceleration_limits.size());
+  assert(kinova_mediator_constants::ACTUATOR_COUNT == kinova_constants::joint_acceleration_limits.size());
   return kinova_constants::joint_acceleration_limits;
 }
 
@@ -617,7 +778,7 @@ std::vector<double> kinova_mediator::get_joint_torque_limits()
 
 std::vector<double> kinova_mediator::get_joint_stopping_torque_limits()
 {
-  assert(ACTUATOR_COUNT == kinova_constants::joint_stopping_torque_limits.size());
+  assert(kinova_mediator_constants::ACTUATOR_COUNT == kinova_constants::joint_stopping_torque_limits.size());
   return kinova_constants::joint_stopping_torque_limits;
 }
 
@@ -665,11 +826,18 @@ bool kinova_mediator::is_initialized()
 }
 
 // Initialize variables and calibrate the manipulator:
-void kinova_mediator::initialize(const int robot_environment, const int id, const double DT_SEC)
+void kinova_mediator::initialize(const int robot_environment, const robot_id robot_id_, 
+  const std::string& username, const std::string& password, const int session_inactivity_timeout, 
+  const int connection_inactivity_timeout, const int PORT_, const int PORT_REAL_TIME_, 
+  const double DT_SEC)
 {
-  kinova_id = id;
+  print("Initializing the robot");
+
+  kinova_id = robot_id_;
   kinova_environment_ = robot_environment;
   DT_SEC_ = DT_SEC;
+  username_ = username;
+  password_ = password;
 
   // Reset Flags
   is_initialized_ = false;
@@ -690,24 +858,24 @@ void kinova_mediator::initialize(const int robot_environment, const int id, cons
     this->transport_ = std::make_shared<Kinova::Api::TransportClientTcp>();
     this->router_ = std::make_shared<Kinova::Api::RouterClient>(transport_.get(), error_callback);
     if (kinova_id == KINOVA_GEN3_1)
-      transport_->connect(IP_ADDRESS_1, PORT);
+      transport_->connect(kinova_mediator_constants::IP_ADDRESS_1, PORT_);
     else
-      transport_->connect(IP_ADDRESS_2, PORT);
+      transport_->connect(kinova_mediator_constants::IP_ADDRESS_2, PORT_);
 
     this->transport_real_time_ = std::make_shared<Kinova::Api::TransportClientUdp>();
     this->router_real_time_ =
         std::make_shared<Kinova::Api::RouterClient>(transport_real_time_.get(), error_callback);
     if (kinova_id == KINOVA_GEN3_1)
-      transport_real_time_->connect(IP_ADDRESS_1, PORT_REAL_TIME);
+      transport_real_time_->connect(kinova_mediator_constants::IP_ADDRESS_1, PORT_REAL_TIME_);
     else
-      transport_real_time_->connect(IP_ADDRESS_2, PORT_REAL_TIME);
+      transport_real_time_->connect(kinova_mediator_constants::IP_ADDRESS_2, PORT_REAL_TIME_);
 
     // Set session data connection information
     auto create_session_info = Kinova::Api::Session::CreateSessionInfo();
-    create_session_info.set_username("admin");
-    create_session_info.set_password("admin");
-    create_session_info.set_session_inactivity_timeout(200);     // (milliseconds)
-    create_session_info.set_connection_inactivity_timeout(200);  // (milliseconds)
+    create_session_info.set_username(username_);
+    create_session_info.set_password(password_);
+    create_session_info.set_session_inactivity_timeout(session_inactivity_timeout);    // (milliseconds)
+    create_session_info.set_connection_inactivity_timeout(connection_inactivity_timeout); // (milliseconds)
 
     // Session manager service wrapper
     this->session_manager_ = std::make_shared<Kinova::Api::SessionManager>(router_.get());
@@ -751,7 +919,7 @@ void kinova_mediator::initialize(const int robot_environment, const int id, cons
       base_feedback_ = base_cyclic_->RefreshFeedback();
 
       // Initialize each actuator to their current position
-      for (int i = 0; i < ACTUATOR_COUNT; i++)
+      for (int i = 0; i < kinova_mediator_constants::ACTUATOR_COUNT; i++)
         base_command_.add_actuators()->set_position(base_feedback_.actuators(i).position());
       
       // Send a first command (time frame) -> position command in this case
